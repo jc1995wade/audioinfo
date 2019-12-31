@@ -4,39 +4,13 @@
 #include <string.h>
 #include "info_mp3.h"
 
-struct Tag_header Mp3Header;
-struct Tag_trailer Mp3Trailer;
-struct Frame_header MP3Frameh;
+struct ID3v2_label ID3v2Label; 
+struct Label_header MP3LHeader;
+struct Label_frame_header MP3LFramHeader;
+struct Frame_VBR_header MP3VBRHeader;
 
-void tag_getFrame(FILE *fp);
 
-
-void tagGetTrailer(FILE *fp)
-{
-	
-	// Get Header
-	fseek(fp,-128,SEEK_END);
-	fread(Mp3Trailer.Header,3,1,fp);
-	// Get Title
-	fseek(fp,-125,SEEK_END);
-	fread(Mp3Trailer.Title,30,1,fp);
-	// Get Artist
-	fseek(fp,-95,SEEK_END);
-	fread(Mp3Trailer.Artist,30,1,fp);
-	// Get Album
-	fseek(fp,-65,SEEK_END);
-	fread(Mp3Trailer.Album,30,1,fp);
-	// Get Year
-	fseek(fp,-35,SEEK_END);
-	fread(Mp3Trailer.Year,4,1,fp);
-	// Get Comment
-	fseek(fp,-31,SEEK_END);
-	fread(Mp3Trailer.Comment,30,1,fp);
-	// Get Cenre
-	fseek(fp,-1,SEEK_END);
-	fread(Mp3Trailer.Cenre,1,1,fp);
-}
-void tagGetHeader(FILE *fp)
+int getLabelHeader(FILE *fp)
 {
 	int ret;
 	printf("get header\n");
@@ -44,37 +18,43 @@ void tagGetHeader(FILE *fp)
 	memset(buf, 0, sizeof(buf));
 	fseek(fp,0,SEEK_SET);
 	ret = fread(buf, sizeof(char), 10, fp);
-	memcpy(&Mp3Header, buf, sizeof(Mp3Header));
-	printf("header=%.*s\n", 3, Mp3Header.Header);
-	printf("ver=%d\n", (int)Mp3Header.ver);
-	printf("ReVer=%c\n", Mp3Header.ReVer);
-	printf("Flag=%d\n", (int)Mp3Header.Flag);
+	memcpy(&MP3LHeader, buf, sizeof(MP3LHeader));
+	printf("header=%.*s\n", 3, MP3LHeader.Header);
+	printf("ver=%d\n", (int)MP3LHeader.ver);
+	printf("ReVer=%c\n", MP3LHeader.ReVer);
+	printf("Flag=%d\n", (int)MP3LHeader.Flag);
 	
 	int total_size;
-	total_size = (Mp3Header.Size[0]&0x7F)*0x200000 \
-				+(Mp3Header.Size[1]&0x7F)*0x4000 \
-				+(Mp3Header.Size[2]&0x7F)*0x80 \
-				+(Mp3Header.Size[3]&0x7F);
+	total_size = (MP3LHeader.Size[0]&0x7F)*0x200000 \
+				+(MP3LHeader.Size[1]&0x7F)*0x4000 \
+				+(MP3LHeader.Size[2]&0x7F)*0x80 \
+				+(MP3LHeader.Size[3]&0x7F);
+	ID3v2Label.TotalSize = total_size;
 	printf("Size=%d\n", total_size);
 
-	tag_getFrame(fp);
-	
+    return (ID3v2Label.TotalSize -= 10);
 }
 
-void tag_getFrame(FILE *fp)
+int getLabelFrameHeader(FILE *fp)
 {
+
+    if (ID3v2Label.TotalSize < 1) {
+        printf("getLabelFrameHeader: Label end\n");
+        return 0;
+    }
 	char buf[20];
 	memset(buf, 0 , sizeof(buf));
 	fread(buf, sizeof(char), 10, fp);
-	memset(&MP3Frameh, 0, sizeof(MP3Frameh));
-	memcpy(&MP3Frameh, buf, sizeof(MP3Frameh));
-	printf("FrameID=%.*s\n", 4, MP3Frameh.FrameID);
+	memset(&MP3LFramHeader, 0, sizeof(MP3LFramHeader));
+	memcpy(&MP3LFramHeader, buf, sizeof(MP3LFramHeader));
+	printf("FrameID=%.*s\n", 4, MP3LFramHeader.FrameID);
 	int FSize;
-	FSize = MP3Frameh.Size[0]*0x1000000 \
-		   +MP3Frameh.Size[1]*0x10000 \
-		   +MP3Frameh.Size[2]*0x100 \
-		   +MP3Frameh.Size[3];
+	FSize = MP3LFramHeader.Size[0]*0x1000000 \
+		   +MP3LFramHeader.Size[1]*0x10000 \
+		   +MP3LFramHeader.Size[2]*0x100 \
+		   +MP3LFramHeader.Size[3];
 	printf("Size=%d\n", FSize);
+	ID3v2Label.LabelFrameSize = FSize;
 	/* Flags[2]
 	只定义了 6 位,另外的 10 位为 0,但大部分的情况下 16 位都为 0 就可以了。格式如下:
 	abc00000 ijk00000
@@ -85,18 +65,105 @@ void tag_getFrame(FILE *fp)
 	j -- 加密标志(没有见过哪个 MP3 文件的标签用了加密)
 	k -- 组标志,设置时说明此帧和其他的某帧是一组
 	*/
-
-	memset(buf, 0 , sizeof(buf));
-	fread(buf, sizeof(char), 11, fp);
-	printf("buf=[%s]\n", buf+1);
-	
-	memset(buf, 0 , sizeof(buf));
-	fread(buf, sizeof(char), 4, fp);
-	printf("buf=[%.*s]\n", 4, buf);
-
-
+    return (ID3v2Label.TotalSize -= 10);
 }
 
+int getLabelFrameContent(FILE *fp)
+{
+    if (ID3v2Label.TotalSize < 1) {
+        printf("getLabelFrameContent: Label end\n");
+        return 0;
+    }
+    if (ID3v2Label.LabelFrameSize < 1){
+        printf("getLabelFrameContent: Frame null\n");
+        return 0;
+    }
+    char buf[1024];
+    memset(buf, 0 , sizeof(buf));
+	fread(buf, sizeof(char), ID3v2Label.LabelFrameSize, fp);
+	printf("buf=[%s]\n", buf+1);
+
+	return (ID3v2Label.TotalSize -= ID3v2Label.LabelFrameSize);
+}
+
+
+
+int findFrameMPEGHeader(FILE *fp)
+{
+	int sync = 0x7FF;
+	char buf[1024];
+    memset(buf, 0 , sizeof(buf));
+    
+    do{
+		fread(buf, sizeof(char), 2, fp);
+		printf("sync=%d\n", (buf[0]&sync && buf[1]&sync));
+	}while(!(buf[0]&sync && buf[1]&sync));
+	fseek(fp, -2L, SEEK_CUR);
+	return 0;
+}
+
+int findFrameVBRHeader(FILE *fp)
+{
+	int ret;
+	unsigned char buf[1024];
+    memset(buf, 0 , sizeof(buf));
+    
+    do{
+		ret = fread(MP3VBRHeader.Header, sizeof(char), 4, fp);
+		if (0==strncmp(MP3VBRHeader.Header, "Info",4) \
+		      || 0==strncmp(MP3VBRHeader.Header, "Xing", 4)){
+			printf("findFrameVBRHeader ok\n");
+			break;
+		}
+	} while(ret);
+	printf("VBR Header=[%.*s]\n", 4, MP3VBRHeader.Header);
+	
+	memset(buf, 0, sizeof(buf));
+	ret = fread(buf, sizeof(char), 4, fp);
+	int Flag;
+	Flag = buf[0]*0x1000000 \
+		   +buf[1]*0x10000 \
+		   +buf[2]*0x100 \
+		   +buf[3];
+	printf("Flag=%d\n", Flag);
+	unsigned int SumFrame;
+	unsigned int SumSize;
+	unsigned int Quality;
+	if (Flag&0x0001) {
+		// Number of frames
+		ret = fread(buf, sizeof(char), 4, fp);
+		SumFrame = buf[0]*0x1000000 \
+				  +buf[1]*0x10000 \
+				  +buf[2]*0x100 \
+				  +buf[3];
+		printf("SumFrame=%d\n", SumFrame);
+	}
+	if (Flag&(0x1<<1)) {
+		// Storage file size
+		ret = fread(buf, sizeof(char), 4, fp);
+		SumSize = buf[0]*0x1000000 \
+				 +buf[1]*0x10000 \
+				 +buf[2]*0x100 \
+				 +buf[3];
+		printf("SumSize=%d\n", SumSize);
+	}
+	if (Flag&0x0004) {
+		// TOC
+		fseek(fp, 100, SEEK_CUR);
+	}
+	if (Flag&0x0008) {
+		//Quality indicator
+		ret = fread(buf, sizeof(char), 4, fp);
+		Quality = buf[0]*0x1000000 \
+				 +buf[1]*0x10000 \
+				 +buf[2]*0x100 \
+				 +buf[3];
+		printf("Quality=%d\n", Quality);	
+	}
+	
+
+	return 0;
+}
 
 int main(int argc, char *argv[])
 {
@@ -116,21 +183,31 @@ int main(int argc, char *argv[])
     printf("%s\n", file);
 
 	fp = fopen((const char *)file, "r+");
-	if(fp == NULL) {
+	if(NULL == fp) {
 	   printf("No such file");
-	}
-	else{
-		memset(&Mp3Header, 0, sizeof(Mp3Header));
-		memset(&Mp3Trailer, 0, sizeof(Mp3Trailer));
-		tagGetHeader(fp);
-		//tagGetTrailer(fp);
+	   return -1;
 	}
 
-	//printf("\n%s\n",Mp3Trailer.Title);
-	//printf("%s\n",Mp3Trailer.Artist);
-	//printf("%s\n",Mp3Trailer.Album);
-	//printf("%s\n",Mp3Trailer.Year);
-	//printf("%s\n",Mp3Trailer.Comment);
+	int size;
+	size = getLabelHeader(fp);
+
+	while(size >= 1) {
+	    printf("...size=%d\n", size);
+	    size = getLabelFrameHeader(fp);
+	    if (size >= 1) {
+	        size = getLabelFrameContent(fp);
+	    }
+	}
+	
+	findFrameMPEGHeader(fp);
+	
+	FHEADER Fheader;
+	fread(&Fheader, sizeof(FHEADER), 1, fp);
+	printf("bit_rate_index=%d\n", Fheader.bit_rate_index);
+	printf("sample_rate_index=%d\n", Fheader.sample_rate_index);
+	
+	findFrameVBRHeader(fp);
+
 	fclose(fp);
     return 0;
 }
