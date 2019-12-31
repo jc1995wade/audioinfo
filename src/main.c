@@ -8,6 +8,10 @@ struct ID3v2_label ID3v2Label;
 struct Label_header MP3LHeader;
 struct Label_frame_header MP3LFramHeader;
 struct Frame_VBR_header MP3VBRHeader;
+struct Frame_header Fheader;
+
+
+struct MP3_info MP3Info;
 
 
 int getLabelHeader(FILE *fp)
@@ -96,7 +100,7 @@ int findFrameMPEGHeader(FILE *fp)
     
     do{
 		fread(buf, sizeof(char), 2, fp);
-		printf("sync=%d\n", (buf[0]&sync && buf[1]&sync));
+		//printf("sync=%d\n", (buf[0]&sync && buf[1]&sync));
 	}while(!(buf[0]&sync && buf[1]&sync));
 	fseek(fp, -2L, SEEK_CUR);
 	return 0;
@@ -125,6 +129,7 @@ int findFrameVBRHeader(FILE *fp)
 		   +buf[1]*0x10000 \
 		   +buf[2]*0x100 \
 		   +buf[3];
+	MP3VBRHeader.Flag = Flag;
 	printf("Flag=%d\n", Flag);
 	unsigned int SumFrame;
 	unsigned int SumSize;
@@ -136,6 +141,7 @@ int findFrameVBRHeader(FILE *fp)
 				  +buf[1]*0x10000 \
 				  +buf[2]*0x100 \
 				  +buf[3];
+		MP3VBRHeader.FrameCount = SumFrame;
 		printf("SumFrame=%d\n", SumFrame);
 	}
 	if (Flag&(0x1<<1)) {
@@ -145,6 +151,7 @@ int findFrameVBRHeader(FILE *fp)
 				 +buf[1]*0x10000 \
 				 +buf[2]*0x100 \
 				 +buf[3];
+		MP3VBRHeader.Size = SumSize;
 		printf("SumSize=%d\n", SumSize);
 	}
 	if (Flag&0x0004) {
@@ -158,12 +165,58 @@ int findFrameVBRHeader(FILE *fp)
 				 +buf[1]*0x10000 \
 				 +buf[2]*0x100 \
 				 +buf[3];
+		MP3VBRHeader.Quality = Quality;
 		printf("Quality=%d\n", Quality);	
 	}
 	
 
 	return 0;
 }
+
+const uint32_t FrameSamples[4][4] = {
+	{ 0,    0,  0,    0    },   // 00 -NC
+	{ 576 , 0,  576,  1152 },	// 01 -III  Layer
+	{ 1152, 0,  1152, 1152 },   // 10 -II
+	{ 384,  0,  384,  384  }    // 11 -I
+};
+//    2.5   NC   2     1   MPEG
+
+
+const uint32_t SampleRate[4][3] =  {
+	{ 32000, 16000, 8000  },  // 00 -2.5   MPEG
+	{ 48000, 24000, 12000 },  // 01 -2
+	{ 44100, 22050, 11025 },  // 10 -1
+	{ 0,     0,     0     }   // 11 -NC
+};
+//     00     01     10  sample_rate_index                         
+
+int getMP3Info(void)
+{
+	strncmp(MP3Info.FormatString, MP3LHeader.Header, 3);
+	MP3Info.FormatVersion = MP3LHeader.ver;
+
+	//总持续时间 = 总帧数 * 每帧采样数 / 采样率 (结果为秒)
+	/* Fheader.version
+	   00 MPEG 2.5
+	   01 保留
+	   10 MPEG 2
+	   11 MPEG 1
+	*/
+
+	/* Fheader.layer
+	   00 保留
+	   01 Layer III
+	   10 Layer II
+	   11 Layer I
+	*/
+	uint32_t spf = FrameSamples[Fheader.layer][Fheader.version];
+	printf("sample_rate_index=%d\n", Fheader.sample_rate_index);
+	uint32_t sr = SampleRate[Fheader.sample_rate_index][Fheader.version];
+	printf("FrameSamples=[%d], SampleRate=[%d]\n", spf, sr);
+	MP3Info.Duration = MP3VBRHeader.FrameCount * spf;
+	return 0;
+}
+
 
 int main(int argc, char *argv[])
 {
@@ -192,7 +245,7 @@ int main(int argc, char *argv[])
 	size = getLabelHeader(fp);
 
 	while(size >= 1) {
-	    printf("...size=%d\n", size);
+	    //printf("...size=%d\n", size);
 	    size = getLabelFrameHeader(fp);
 	    if (size >= 1) {
 	        size = getLabelFrameContent(fp);
@@ -201,13 +254,14 @@ int main(int argc, char *argv[])
 	
 	findFrameMPEGHeader(fp);
 	
-	FHEADER Fheader;
-	fread(&Fheader, sizeof(FHEADER), 1, fp);
-	printf("bit_rate_index=%d\n", Fheader.bit_rate_index);
-	printf("sample_rate_index=%d\n", Fheader.sample_rate_index);
+
+	fread(&Fheader, sizeof(Fheader), 1, fp);
+	printf("layer=%d\n", Fheader.layer);
+	printf("version=%d\n", Fheader.version);
 	
 	findFrameVBRHeader(fp);
 
+	getMP3Info();
 	fclose(fp);
     return 0;
 }

@@ -1,16 +1,18 @@
 #ifndef __MP3_H__
 #define __MP3_H__
 
+#define uint32_t unsigned int 
+
 struct MP3_info {
-    char FormatString[30];
-    int  FormatVersion;
-    int  FormatSetting;
-    int  Duration;
-    int  BitRate_Mode;
-    int  BitRate;
-    int  Channels;
-    int  SamplingRate;
-    char CompressionMode[10];
+    char FormatString[30]; //格式
+    uint32_t  FormatVersion;    //格式版本
+    uint32_t  Duration;         //持续时间
+    uint32_t  BitRate_Mode;     //码率模式
+    uint32_t  BitRate;          //码率
+    uint32_t  Channels;         //声道
+    uint32_t  SamplingRate;     //采样率
+    uint32_t  FrameRate;        //帧率
+    char CompressionMode[10];  //压缩模式
 };
 
 
@@ -46,7 +48,7 @@ struct ID3v2_label {
 };
 
 
-typedef struct Frame_header
+struct Frame_header
 {
     unsigned int sync1:8; //同步信息 1
     unsigned int error_protection:1; //CRC 校验
@@ -62,7 +64,7 @@ typedef struct Frame_header
     unsigned int copyright:1; //版权标志
     unsigned int mode_extension:2; //扩展模式,仅用于联合立体声
     unsigned int channel_mode:2; //声道模式
-}FHEADER, *pFHEADER;
+};
 
 struct Frame_VBR_header {
 	unsigned char Header[4];
@@ -70,6 +72,7 @@ struct Frame_VBR_header {
 	unsigned int  FrameCount;
 	unsigned int  Size;
 	unsigned char Tco[100];
+	unsigned int  Quality;
 };
 
 
