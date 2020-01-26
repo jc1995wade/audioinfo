@@ -6,7 +6,7 @@
 struct MP3_info {
     char FormatString[30]; //格式
     uint32_t  FormatVersion;    //格式版本
-    uint32_t  Duration;         //持续时间
+    unsigned long long  Duration;         //持续时间
     uint32_t  BitRate_Mode;     //码率模式
     uint32_t  BitRate;          //码率
     uint32_t  Channels;         //声道

@@ -195,7 +195,7 @@ int getMP3Info(void)
 	strncmp(MP3Info.FormatString, MP3LHeader.Header, 3);
 	MP3Info.FormatVersion = MP3LHeader.ver;
 
-	//总持续时间 = 总帧数 * 每帧采样数 / 采样率 (结果为秒)
+	//CBR文件：总持续时间 = 总帧数 * 每帧采样数 / 采样率 (结果为秒)
 	/* Fheader.version
 	   00 MPEG 2.5
 	   01 保留
@@ -209,11 +209,13 @@ int getMP3Info(void)
 	   10 Layer II
 	   11 Layer I
 	*/
+	//sample per frame SPF
 	uint32_t spf = FrameSamples[Fheader.layer][Fheader.version];
-	printf("sample_rate_index=%d\n", Fheader.sample_rate_index);
 	uint32_t sr = SampleRate[Fheader.sample_rate_index][Fheader.version];
-	printf("FrameSamples=[%d], SampleRate=[%d]\n", spf, sr);
-	MP3Info.Duration = MP3VBRHeader.FrameCount * spf;
+	printf("FrameSamples=[%d]\n", spf);
+	printf("SampleRate=[%d]\n", sr);
+	MP3Info.Duration = (MP3VBRHeader.FrameCount * spf)/sr;
+	printf("Duration=[%lld]\n", MP3Info.Duration);
 	return 0;
 }
 
